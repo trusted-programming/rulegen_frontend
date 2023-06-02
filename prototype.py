@@ -22,7 +22,8 @@ st.markdown('This is a workbench for predicting missing TXL rules. Upload **code
 
 # UI Layout
 col1, col2, col3 = st.columns(3)
-
+samples = ['Sample 1', 'Sample 2', 'Sample 3']  # Replace these with actual sample names
+selected_sample = st.selectbox('Or choose a predefined sample', samples)
 with col1:
     st.markdown("## Code before")
     uploaded_before_file = st.file_uploader(
