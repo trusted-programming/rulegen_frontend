@@ -1,0 +1,5 @@
+internal ColoredPoint (int x, int y, int color) : base (x, y) {
+    this.color = color;
+}
+
+ 

@@ -1,0 +1,316 @@
+#if not TXL_RULES_MAIN then
+#define TXL_RULES_MAIN
+
+include "rust.grm"
+
+
+
+#end if
+% argcArgv.txl starts here
+
+#if not TXL_RULES_ARGC_ARGV then
+#define TXL_RULES_ARGC_ARGV
+
+
+
+
+
+
+#end if
+
+% common.txl starts here
+#if not TXL_RULES_COMMON then
+#define TXL_RULES_COMMON
+
+% remove all `as` cast of given type from scope
+
+% prepend an Item in program, e.g.: adding "use std :: env ;"
+
+
+
+% whether function is declared in an external block
+
+
+
+
+
+
+
+% rm function declarations in extern block that are not called.
+
+
+
+
+% remove given Item if given N is one
+
+% add Id to UniqIds if it is in Ids and not in UniqIds
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% this is to avoid removing casts from integer to raw pointers, e.g. in 100_prisoners:
+%   pub static mut drawerSet : * mut drawer = 0 as * const drawer as * mut drawer;
+
+% this is to avoid removing casts from BYTE_STRING_LITERAL to raw pointers, e.g. in array_length:
+%   let mut fruit : [* const i8; 2] = [b"apples\x00" as *const i8, b"oranges\x00" as *const i8];
+
+
+% common.txl ends here
+#end if
+
+% exit.txl starts here
+#if not TXL_RULES_EXIT then
+#define TXL_RULES_EXIT
+
+% transform C exit(int) function call to Rust ::std::process::exit
+
+
+
+
+% exit.txl ends here
+#end if
+
+% externCBlock.txl starts here
+#if not TXL_RULES_EXTERN_C_BLOCK then
+#define TXL_RULES_EXTERN_C_BLOCK
+
+
+
+% externCBlock.txl ends here
+#end if
+
+% innerAttributes.txl starts here
+#if not TXL_RULES_INNER_ATTRIBUTES then
+#define TXL_RULES_INNER_ATTRIBUTES
+
+% remove all unstable inner attributes
+
+% innerAttributes.txl ends here 
+#end if
+
+% outerAttributes.txl starts here
+#if not TXL_RULES_OUTER_ATTRIBUTES then
+#define TXL_RULES_OUTER_ATTRIBUTES
+
+% remove all unstable outer attributes
+
+% outerAttributes.txl ends here
+#end if
+
+% primitiveTypes.txl starts here
+#if not TXL_RULES_PRIMITIVE_TYPES then
+#define TXL_RULES_PRIMITIVE_TYPES
+
+
+
+% primitiveTypes.txl ends here
+#end if
+
+% random.txl starts here
+#if not TXL_RULES_RANDOM then
+#define TXL_RULES_RANDOM
+
+% transform C srand() function call to Rust Pcg64::seed_from_u64()
+
+
+
+
+
+
+
+
+
+% transform C rand() call
+
+
+% random.txl ends here
+#end if
+
+% scrust.txl starts here
+#if not TXL_RULES_SCRUST then
+#define TXL_RULES_SCRUST
+
+% rules specific to scrust transpiled Rust
+% remove uncompilable use for stable Ruse
+
+% scrust.txl ends here
+#end if
+
+% usleep.txl starts here
+#if not TXL_RULES_USLEEP then
+#define TXL_RULES_USLEEP
+
+% transform C usleep(useconds_t usec) function call to Rust thread::sleep(duration)
+
+
+
+
+
+% usleep.txl ends here
+
+#end if
+
+
+
+
+
+function main
+    replace [program]
+        P [program]
+    by
+        P   
+            %
+            [random2Rust]
+            
+            
+            
+            
+            
+            
+end function
+
+
+
+function random2Rust
+    replace [program]
+        P [program]
+    construct UseRandPrelude [Item?]
+        _ [_getUseRandPrelude]
+    construct UseRandPcg [Item?]
+        _ [_getUseRandPcg]
+    construct UseLazyStatic [Item?]
+        _ [_getUseLazyStatic]
+    construct UseMutex [Item?]
+        _ [_getUseMutex]
+    construct StructRustRand [Item?]
+        _ [_getStructRustRand]
+    construct ImplRustRand [Item?]
+        _ [_getImplRustRand]
+    construct GlobalRustRand [Item?]
+        _ [_getGlobalRustRand]
+    by
+        P   [prependItemInProgram2 GlobalRustRand ""]
+            [prependItemInProgram2 ImplRustRand ""]
+            [prependItemInProgram2 StructRustRand ""]
+            [prependItemInProgram2 UseMutex ""]
+            [prependItemInProgram2 UseLazyStatic "ADD_DEP (lazy_static, 1.4.0)"]
+            [prependItemInProgram2 UseRandPcg "ADD_DEP (rand_pcg, 0.3.0)"]
+            [prependItemInProgram2 UseRandPrelude "ADD_DEP (rand, 0.8.0)"]
+            
+            
+            
+end function
+
+
+
+function prependItemInProgram2 AnItem [Item?] Msg [stringlit]
+    replace [program]
+        Utf8Bom [UTF8BOM_NL?]
+        Shebang [SHEBANG_NL?]
+        InnerAttributes [InnerAttribute*]
+        Items [Item*]
+    deconstruct AnItem
+        Item [Item]
+    deconstruct not * [Item] Items
+        Item
+    construct AllItems [Item*]
+        Item Items 
+    by
+        Utf8Bom
+        Shebang
+        InnerAttributes
+        AllItems
+end function
+
+
+
+function prependItemInProgram AnItem [Item]
+    replace [program]
+        Utf8Bom [UTF8BOM_NL?]
+        Shebang [SHEBANG_NL?]
+        InnerAttributes [InnerAttribute*]
+        Items [Item*]
+    deconstruct not * [Item] Items
+        AnItem
+    construct AllItems [Item*]
+        AnItem Items
+    by
+        Utf8Bom
+        Shebang
+        InnerAttributes
+        AllItems
+end function
+
+
+
+function _getUseRandPcg
+    replace [Item?]
+        _ [Item?]
+    construct UseRandPcg [Item]
+        use rand_pcg::Pcg64;
+    by
+        UseRandPcg
+end function
+
+
+
+function _getUseRandPrelude
+    replace [Item?]
+        _ [Item?]
+    construct UseRandPrelude [Item]
+        use rand::prelude::*;
+    by
+        UseRandPrelude
+end function
+
+
+
+function _getUseLazyStatic
+    replace [Item?]
+        _ [Item?]
+    construct UseLazyStatic [Item]
+        use lazy_static::lazy_static;
+    by
+        UseLazyStatic
+end function
+
+
+
+function _getStructRustRand
+    replace [Item?]
+        _ [Item?]
+    construct StructRustRand [Item]
+        struct RustRand {
+            rng: Option<Pcg64>,
+        }
+    by
+        StructRustRand
+end function
+

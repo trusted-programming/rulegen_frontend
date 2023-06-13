@@ -1,0 +1,1292 @@
+function translateMemberDeclaration
+	replace*[member_declaration]
+		Member[member_declaration]
+	by
+		Member[translateTypeDecl]%2 static nested types only	
+		      %[translateMethodConstructor] 1 
+end function
+
+function translateMethodConstructor
+	%match only the top level methods or constructors
+	skipping [type_declaration]
+	replace*[member_declaration]
+		MC[method_or_constructor_declaration]
+		%deconstruct Member
+		%MC[method_or_constructor_declaration]
+	by
+		MC[translateMethods]
+		  [doConChaining]% if a super class is called
+		  [translateConstructors]% modifiers,declarator and block
+		  [changMethodArray][changeConstructorArray]
+end function
+
+function translateTypeDecl
+	replace[member_declaration]
+		NestedType[type_declaration]
+	by
+		NestedType[nonStaticNested][staticNested]
+end function
+
+function translateMethods
+	replace[method_or_constructor_declaration]
+		Modifiers[repeat modifier] TypeSpecify[type_specifier]
+		MDeclar[method_declarator]
+		ThrowsClause[opt throws] 
+		MBody[method_body]	
+	by
+		Modifiers[changeMethodModifiers]
+		TypeSpecify[changeDataTypes][changeArrayTypes]
+		MDeclar[changeMethodDeclarator]
+		%ThrowsClause %not allowed in C#
+		MBody[translateBlock]
+end function
+
+
+
+function translateConstructors
+	replace[method_or_constructor_declaration]
+		Modifiers[repeat modifier] 
+		ConDeclar[constructor_declarator] 
+		ThrowsClause[opt throws] 
+		ConBody[constructor_body]
+
+	by
+		Modifiers[changeConstructorModifiers]
+		ConDeclar[changeConstructorDeclarator]
+		%ThrowsClause %not allowed in C#
+		ConBody [translateBlock]%[changeConstructorInheritance ConDeclar]
+
+end function
+
+function doConChaining
+	replace[method_or_constructor_declaration]
+		Modifiers[repeat modifier] 
+		ConDeclar[constructor_declarator] 
+		ThrowsClause[opt throws] 
+		ConBody[constructor_body]
+	%check the first stmt if it is a call to super or this
+	where ConBody[containSuper][containThis]
+	by
+		Modifiers 
+		ConDeclar[changeToBase ConBody][changeToThis ConBody]
+		ThrowsClause %ommited later
+		ConBody [removeFirstStmt]
+end function
+
+function changeConstructorArray
+	replace[method_or_constructor_declaration]
+		Modifiers[repeat modifier] 
+		Name[class_name] '( FormalParms[list formal_parameter]') 
+		ThrowsClause[opt throws] 
+		Body[constructor_body]
+	construct NewFormalParms[list formal_parameter]
+		FormalParms[changeMethodConArrayDimentions]
+	by
+		Modifiers Name '( NewFormalParms ')ThrowsClause 
+		Body
+
+end function
+
+function staticNested
+	replace[type_declaration]
+		NestedType[type_declaration]
+	where not NestedType[isComment]
+	where NestedType[checkStatic]
+	by
+		NestedType[removeStatic][changeStaticClassHeader][changeStaticInterfaceHeader]
+			  %[removeStatic]
+end function
+
+function nonStaticNested
+	replace[type_declaration]
+		NestedType[type_declaration]
+	where not NestedType[isComment]
+	where not NestedType[checkStatic]
+	
+	construct S[stringlit]
+		"//J2C# NotSupported:Inner classes must be removed manually"
+	construct Comment[comment]
+		_[unquote S]	
+	construct RepeatCom[ repeat comment]
+		_[. Comment]
+	by
+		Comment NestedType
+end function
+
+function changeDataTypes
+	replace[type_specifier]
+		DataType[primitive_type]
+	by
+		DataType[changePrimDataTypes]
+end function
+
+function changeArrayTypes
+	replace[type_specifier]
+		ArrayType[type_name] Dimentions[repeat dimension+]
+		deconstruct *[primitive_type] ArrayType
+			PrimType[primitive_type]
+	by
+		PrimType[changePrimDataTypes]Dimentions
+end function
+
+function changeMethodDeclarator
+	replace [method_declarator]
+	   Name[method_name] '( FormalParms[list formal_parameter] ') Dim[repeat dimension] 
+	   construct NewFormalParms[list formal_parameter]
+		_[changeFormalParamsDataTypes each FormalParms ]
+	  
+	by
+	  Name[changeMain] '( NewFormalParms ')Dim
+end function
+
+function changeMethodModifiers
+    construct JavaModifiers [repeat modifier]
+    	'native  
+    construct CSModifiers [repeat modifier]
+    	'extern 
+    replace * [ repeat modifier]
+        Modifiers [repeat modifier]
+    by
+	Modifiers [$ each JavaModifiers CSModifiers ]
+	          [changeAbstract]
+	          [makeVirtual]
+	          [changeProtected]
+	          [removeNonCS]      
+end function
+
+function translateBlock
+	replace*[block]
+	   '{                                        
+        	DeclOrStmt[repeat declaration_or_statement]     
+    	   '}
+	by
+	   '{
+	   	DeclOrStmt[translateVarDeclaration]
+	   	          [translateClassInBlock]     
+           	          [translateStatementInBlock]
+           '}
+end function
+
+rule changeMethodConArrayDimentions 
+	replace[formal_parameter]
+		FormalParm[formal_parameter]
+	deconstruct FormalParm
+		FinalOpt[opt 'final] DataType[type_name] Name[declared_name]Dim[repeat dimension]
+	by
+		FinalOpt DataType Dim Name
+end rule
+
+function changeConstructorDeclarator
+	replace [constructor_declarator]
+	   Name[class_name] '( FormalParms[list formal_parameter]') %Init[opt constructor_initializer]  
+	   construct NewFormalParms[list formal_parameter]
+		_[changeFormalParamsDataTypes each FormalParms ]
+	by
+	   Name '( NewFormalParms')%Init
+end function
+
+function changeConstructorModifiers
+    replace * [ repeat modifier]
+        Modifiers [repeat modifier]
+    by
+	Modifiers [setDefaultAccess][changeProtected]		  
+end function
+
+function containSuper 
+	match [constructor_body]
+	   '{
+	       'super args[repeat component] ';
+	       Remaining[repeat declaration_or_statement]
+	   '}
+end function
+
+function containThis 
+	match [constructor_body]
+	   '{
+	       'this args[repeat component] ';
+	       Remaining[repeat declaration_or_statement]
+	   '}
+end function
+
+function changeToBase ConBody[constructor_body]
+	deconstruct ConBody
+	'{
+	    'super args[repeat component] ';
+	    Remaining[repeat declaration_or_statement]
+	'}
+	replace [constructor_declarator]
+	   Name[class_name] '( FormalParms[list formal_parameter] ')
+	by
+	  Name '( FormalParms ')': 'base args
+end function
+
+function changeToThis ConBody[constructor_body]
+	deconstruct ConBody
+	'{
+	    'this args[repeat component] ';
+	    Remaining[repeat declaration_or_statement]
+	'}
+	replace [constructor_declarator]
+	   Name[class_name] '( FormalParms[list formal_parameter] ')
+	by
+	  Name '( FormalParms ')': 'this args
+end function
+
+function removeFirstStmt 
+	replace [constructor_body]
+	   '{
+	       stmt[declaration_or_statement]
+	       Remaining[repeat declaration_or_statement]
+	   '}
+	by
+	   '{ 
+	      Remaining 
+	   '}
+end function
+
+function checkStatic
+	match [type_declaration]
+	   ClassHead[class_header]ClassBody[class_body]
+	   deconstruct *[repeat modifier]ClassHead
+	   	Modifiers[repeat modifier]
+	where Modifiers[containStatic]
+end function
+
+function isComment
+	match [type_declaration]
+		Comment[comment]
+end function
+
+function changeStaticClassHeader
+	replace [type_declaration]
+		ClassHead[class_header]ClassBody[class_body]
+		deconstruct ClassHead
+			modifiers[repeat modifier] 'class Name[class_name] ExtendClause[opt extends_clause] ImplmntClause[opt implements_clause]
+		construct NewModifiers [repeat modifier]		
+			modifiers[changeModifiers ]
+		construct NewImplement[opt implements_clause]
+			ImplmntClause[changeImplement ExtendClause]
+		construct NewExtend [opt extends_clause ]		
+			ExtendClause[changeExtend]
+		construct NewClassHead[class_header]
+		NewModifiers 'class Name NewExtend NewImplement
+	by
+		NewClassHead[addClassExtendToImplmt]
+		ClassBody [translateEmptyBody][changeClassBody]   
+end function
+
+function changeStaticInterfaceHeader
+	replace [type_declaration]
+		InterfaceHead[interface_header] InterfaceBody[interface_body]
+		deconstruct InterfaceHead
+			modifiers[repeat modifier] 'interface Name[interface_name] ExtendClause[opt extends_clause] ImplmntClause[opt implements_clause]
+		construct NewModifiers [repeat modifier]		
+			modifiers[changeModifiers ]
+		construct NewImplement[opt implements_clause]
+			ImplmntClause[changeImplement ExtendClause]
+		construct NewExtend [opt extends_clause]		
+			ExtendClause[changeExtend]
+		construct NewInterfaceHead[interface_header]
+		NewModifiers 'interface Name NewExtend NewImplement
+	by
+		NewInterfaceHead[addInterfaceExtendToImplmt]
+		InterfaceBody [translateEmptyBody][changeInterfaceBody] 
+end function
+
+rule removeStatic
+	replace [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isStatic]
+	by
+	   RemainingModifiers
+end rule
+
+function changePrimDataTypes
+	replace [primitive_type]
+		JavaType[primitive_type]
+		import PrimDataTypesMapping [DataMapper]
+		deconstruct * [primitiveTable] PrimDataTypesMapping
+			JavaType -> CSType [primitive_type]
+	by
+		CSType
+end function
+
+function changeMain
+replace[method_name]
+	'main
+by
+	'Main
+end function
+
+function changeFormalParamsDataTypes FormalParm[formal_parameter]
+	replace[list formal_parameter]
+		FormalParms[list formal_parameter]
+	deconstruct FormalParm	
+		FinalOpt[opt 'final] DataType[type_specifier] Name[variable_name]
+	construct NewFormalParm[formal_parameter]
+		FinalOpt DataType[changeDataTypes][changeArrayTypes] Name
+	by
+		FormalParms[, NewFormalParm]
+end function
+
+function changeAbstract
+replace [repeat modifier]
+	   Modifiers[repeat modifier]
+	where Modifiers[containAbstract] 
+	by
+	   Modifiers[addPublic]
+end function
+
+function makeVirtual
+replace [repeat modifier]
+		Modifiers[repeat modifier]
+	where not Modifiers[containFinal][containAbstract][containStatic][containPrivate] 
+	by
+		'virtual 
+		Modifiers[addPublic]
+end function
+
+function changeProtected
+	replace * [ repeat modifier]
+		'protected
+	by
+		'internal 'protected
+end function
+
+rule removeNonCS
+	replace [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isFinal][isTransient][isVolatile]
+	by
+	   RemainingModifiers
+end rule
+
+function translateVarDeclaration
+replace*[repeat declaration_or_statement]
+	Var[local_variable_declaration]
+	Remaining[repeat declaration_or_statement]
+by
+	Var[checkLocalVars]
+	   [checkLocalConstants][checkLocalRunTimeConstants]
+	   [checkLocalBlankConstants][changeArrayDimensions]
+	Remaining[translateVarDeclaration]
+end function
+
+function translateClassInBlock 
+	replace*[repeat declaration_or_statement]
+		ClassInBlock[class_declaration]
+		Remaining[repeat declaration_or_statement]
+		construct S[stringlit]
+		"//J2C# Unsupported:Classes within blocks must be removed manually"
+		construct Comment[comment]
+			_[unquote S]
+	by
+		Comment
+		ClassInBlock
+		Remaining[translateVarDeclaration]
+end function
+
+function translateStatementInBlock
+	replace*[repeat declaration_or_statement]
+		Stmnt[statement]
+		Remaining[repeat declaration_or_statement]
+	by
+		Stmnt[translateStatement]
+		Remaining[translateStatementInBlock]
+end function
+
+function setDefaultAccess
+	replace [repeat modifier]
+		Modifiers [repeat modifier]
+		construct ModifiersLength[number]
+			_[length Modifiers]
+	where
+		ModifiersLength[< 1]
+	by
+		'internal	
+	end function
+
+rule containStatic
+	match [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isStatic]
+end rule
+
+function changeModifiers
+	replace [repeat modifier]
+		Modifiers[modifier]
+		import ClassInterfaceMapping [Mapper]
+		deconstruct * [table_entry] ClassInterfaceMapping
+			Modifiers -> CSModifier [modifier]
+	by
+		CSModifier
+end function
+
+function changeExtend 
+	replace [opt extends_clause]
+		'extends Enames[list type_name+] 
+		construct AllNames[repeat qualified_name]
+			 _[^ Enames]
+		construct NewListEnames[list qualified_name]
+			 _[toQualifiedName each AllNames]
+	by
+		': NewListEnames
+end function
+
+function changeImplement ExtendClause[opt extends_clause]
+	%check if no extend clause then base class will be Object
+	deconstruct not ExtendClause
+		'extends Enames[list type_name+] 
+	replace [opt implements_clause]
+		'implements Inames[list qualified_name+]
+	construct BaseAll [list qualified_name]
+		Object
+	construct NewNames[list qualified_name+]
+		BaseAll[, Inames]
+	by
+		': NewNames
+end function
+
+function addClassExtendToImplmt 
+	replace [class_header]
+		modifiers[repeat modifier] 'class Name[class_name] ExtendClause[opt extends_clause] ImplmntClause[opt implements_clause]
+		deconstruct ExtendClause
+		': Enames[list qualified_name+] 
+		deconstruct ImplmntClause
+		'implements Inames[list qualified_name+] 
+		construct NewAddedClause[list qualified_name+]
+			Enames[, Inames]
+		construct NewExtend [opt extends_clause]
+			': NewAddedClause
+	by
+		modifiers 'class Name NewExtend
+end function
+
+function translateEmptyBody
+replace [class_body]
+	'{
+		;
+	'}
+	by
+	'{
+	'}
+end function
+
+function changeClassBody
+replace [class_body]
+	'{                                   
+		ClassBodyDecls[repeat class_body_declaration]    
+   	'} optSemiColon[opt ';]          
+	export InitCalls[repeat declaration_or_statement]
+		_%empty one
+	by
+	'{	
+		 ClassBodyDecls[translateFieldDeclaration]
+		 	       [translateInstanceInit]
+		 	       [translateStaticInit]
+		 	       [translateBodyMembers]
+		 	        	
+	'}optSemiColon
+end function
+
+function addInterfaceExtendToImplmt 
+	replace [interface_header]
+		modifiers[repeat modifier] 'interface Name[interface_name] ExtendClause[opt extends_clause] ImplmntClause[opt implements_clause]
+		deconstruct ExtendClause
+		': Enames[list qualified_name+] 
+		deconstruct ImplmntClause
+		'implements Inames[list qualified_name+] 
+		construct NewAddedClause[list qualified_name+]
+			Enames[, Inames]
+		construct NewExtend [opt extends_clause]
+			': NewAddedClause
+	by
+		modifiers 'interface Name NewExtend
+end function
+
+function changeInterfaceBody
+	replace[interface_body]
+		'{                                   
+			InterfaceBodyDecls[repeat class_body_declaration]    
+		'} optSemiColon[opt ';]          
+		by
+		'{	
+			 InterfaceBodyDecls[translateIntFieldDeclaration]
+			 	           [translateIntMethods]
+			 	           %[translateBodyMembers]
+	'}optSemiColon
+end function
+
+function isStatic
+	match [modifier]
+		'static
+end function
+
+function addPublic
+	replace [repeat modifier]
+		Modifiers[repeat modifier]
+	where not Modifiers[containPublic][containPrivate][containProtected] 
+	by
+	   'public 
+	    Modifiers
+end function
+
+rule containAbstract
+	match [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isAbstract]
+end rule
+
+rule containFinal
+	match [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isFinal]
+end rule
+
+rule containPrivate
+	match [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isPrivate]
+end rule
+
+function isFinal
+	match [modifier]
+		'final
+end function
+
+function isTransient
+	match [modifier]
+		'transient
+end function
+
+function isVolatile
+	match [modifier]
+		'volatile
+end function
+
+function checkLocalConstants
+	replace[local_variable_declaration]
+		Modifiers[repeat modifier] 
+		TypeSpecifier[type_specifier] 
+		VarDecl[variable_declarators];
+	construct AllVarDecl[repeat variable_declarator]
+		_[^ VarDecl]
+	deconstruct AllVarDecl
+		FirstVarDecl[variable_declarator]Remaining[repeat variable_declarator]
+	where Modifiers[containFinal]
+	where FirstVarDecl[isCompileTime]
+	by
+		Modifiers[finalToConst][changeProtected]
+		TypeSpecifier[changeDataTypes][changeArrayTypes][changeExceptionName]
+		VarDecl[changeCSException][changeCSStatement] ;	
+end function
+
+function checkLocalRunTimeConstants
+	replace[local_variable_declaration]
+		Modifiers[repeat modifier] 
+		TypeSpecifier[type_specifier] 
+		VarDecl[variable_declarators];
+	construct AllVarDecl[repeat variable_declarator]
+		_[^ VarDecl]
+	deconstruct AllVarDecl
+		FirstVarDecl[variable_declarator]Remaining[repeat variable_declarator]
+	where Modifiers[containFinal]
+	where not FirstVarDecl[isCompileTime]
+	by
+		Modifiers[changeProtected][removeNonCS]%remove final
+		TypeSpecifier[changeDataTypes][changeArrayTypes][changeExceptionName]
+		VarDecl[changeCSException][changeCSStatement] ;	
+end function
+
+function checkLocalBlankConstants
+	replace[local_variable_declaration]
+		Modifiers[repeat modifier] 
+		TypeSpecifier[type_specifier] 
+		VarDecl[variable_name];%no initializer
+	where Modifiers[containFinal]
+	by
+		Modifiers[changeProtected][removeNonCS]%remove final
+		TypeSpecifier[changeDataTypes][changeArrayTypes][changeExceptionName]
+		VarDecl[changeCSException][changeCSStatement] ;	
+end function
+
+function checkLocalVars
+	replace*[local_variable_declaration]
+		Modifiers[repeat modifier] 
+		TypeSpecifier[type_specifier] 
+		VarDecl[variable_declarators];
+		construct AllVarDecl[repeat variable_declarator]
+		_[^ VarDecl]
+	deconstruct AllVarDecl
+		FirstVarDecl[variable_declarator]Remaining[repeat variable_declarator]
+	where not Modifiers[containFinal]
+	by
+		Modifiers[removeNonCSModifiers][changeProtected]
+		TypeSpecifier[changeDataTypes][changeArrayTypes][changeExceptionName]
+		VarDecl[changeCSException][changeCSStatement] ;	
+end function
+
+function changeArrayDimensions 
+	replace[local_variable_declaration]
+		Modifiers[repeat modifier] 
+		DataType[type_name]
+		VarName[declared_name]Dim [repeat dimension]VarInit [opt equals_variable_initializer];
+	construct NewTypeSpecifier[type_specifier]
+		DataType Dim
+	by
+		Modifiers NewTypeSpecifier VarName VarInit ;
+end function
+
+function translateStatement
+	replace [statement]
+		OneStmnt[statement]
+	by
+		OneStmnt[changeExpressionStmt]
+		        [changeIf]
+		        [changeSwitch]
+		        [changeWhile]
+		        [changeDoWhile]
+		        [changeFor]
+		        [changeBreak]
+		        [changeContinue]
+		        [changeReturn]
+		        [changeThrow]
+		        [changeSynchronized]
+		        [changeTry]
+		       
+end function
+
+function toQualifiedName Name[qualified_name]
+replace[list qualified_name]
+	TypeName[list qualified_name]
+by
+	TypeName[,Name]
+end function
+
+function translateInstanceInit
+	replace[repeat class_body_declaration]
+	   ClassBodyDecl[repeat class_body_declaration] 
+	where ClassBodyDecl[containInitBlock] 
+	% change initializers by methods
+	construct NewClassBodyDecl[repeat class_body_declaration]
+		ClassBodyDecl[toMethods]
+	
+	by
+	% add all the methods calls in all constructors
+		NewClassBodyDecl[setDefaultConstructor]
+				[addCalls][addCallsToSuper]
+end function
+
+function translateStaticInit
+	replace[repeat class_body_declaration]
+	   ClassBodyDecl[repeat class_body_declaration] 
+	by
+	   ClassBodyDecl[toStaticConstructor]
+end function
+
+function translateFieldDeclaration
+	replace[repeat class_body_declaration]
+		ClassBodyDecl[repeat class_body_declaration] 
+	by
+		ClassBodyDecl[changeField]
+end function
+
+function translateIntMethods
+	replace[repeat class_body_declaration]                               
+		Modifiers[repeat modifier] TypeSpecify[type_specifier]
+		MDeclar[method_declarator]
+		ThrowsClause[opt throws] 
+		MBody[method_body]	
+		RemainingRepeatBodyDecl[repeat class_body_declaration] 
+		
+	by
+		Modifiers[changeIntMethodModifiers]
+		TypeSpecify[changeDataTypes][changeArrayTypes]
+		MDeclar[changeMethodDeclarator]
+		%ThrowsClause %not allowed in C#
+		MBody[translateBlock]
+		RemainingRepeatBodyDecl[translateIntMethods]
+end function
+
+function translateIntFieldDeclaration
+	replace[repeat class_body_declaration]
+		ClassBodyDecl[repeat class_body_declaration] 
+	by
+		ClassBodyDecl[changeIntField]
+end function
+
+rule containPublic
+	match [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isPublic]
+end rule
+
+rule containProtected
+	match [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isProtected]
+end rule
+
+function isAbstract
+	match [modifier]
+		'abstract
+end function
+
+function isPrivate
+	match [modifier]
+		'private
+end function
+
+function changeExceptionName
+replace *[qualified_name]
+	ExceptionName[qualified_name]
+import RunTimeExceptionsMapper [ExceptionMapper]
+deconstruct * [exceptionTable] RunTimeExceptionsMapper
+	ExceptionName -> CSName [qualified_name]
+by
+	CSName
+end function
+
+function isCompileTime
+	match[variable_declarator]
+		VarName[variable_name] '= Value[literal]
+end function
+
+function finalToConst
+	replace *[repeat modifier]
+		CurrentModifier[modifier]
+		RemainingModifiers[repeat modifier]
+	where CurrentModifier[isFinal]
+	by 
+		'const
+		RemainingModifiers
+end function
+
+function changeCSStatement
+	replace [expression]
+		FirstId[id] '. SecondId[id]'. ThirdId[id]Remaining[repeat component]
+	%to search for specified entry in the statemnts table
+	construct Key[reference]
+		FirstId.SecondId.ThirdId
+	import StatementMapping [StmtMapper]
+	% match the key entry with C# one
+	deconstruct *[table_entry] StatementMapping
+		Key -> CSStmt [reference]
+	% to build a new valid expression 
+	deconstruct CSStmt
+		FirstCSId[id] CSRemaining[repeat component]
+	%join the method arguements with the new part
+	by 
+		FirstCSId CSRemaining[. Remaining]
+end function
+
+function changeCSException
+	replace *[expression]
+		exp[expression]
+	deconstruct exp
+		'new ExceptionName[qualified_name]()
+	by
+		'new ExceptionName[changeExceptionName]()
+end function
+
+rule removeNonCSModifiers
+	replace [repeat modifier]
+		CurrentModifier[modifier]
+		RemainingModifiers[repeat modifier]
+	where CurrentModifier[isTransient][isVolatile]
+	by
+		RemainingModifiers
+end rule
+
+function changeExpressionStmt
+	replace[statement]
+		Expression[expression];
+	by
+		Expression[changeExpression][changeCSStatement];
+end function
+
+function changeIf
+	replace*[statement]
+		'if '( IfExp[expression] ')     
+		        IfStmt[statement]
+    		ElseClause[opt else_clause] 
+	by
+		'if '( IfExp[changeExpression] ')     
+			IfStmt[translateStatement][translateBlock]
+    		ElseClause[changeElseClause] 
+end function
+
+function changeSwitch
+replace*[statement]
+    'switch '( SwitchExp[expression] ') '{ SwitchAlters [repeat switch_alternative] '}
+by
+    'switch '( SwitchExp[changeExpression] ')'{ SwitchAlters [addBreak][fallThrough]
+    							     [changeSwitchStmts] '}   	
+end function
+
+function changeWhile
+	replace*[statement]
+		'while '( WhileExp[expression] ') 
+        		Stmts[statement]   
+	by
+		'while '( WhileExp[changeExpression]') 
+        		Stmts[translateStatement][translateBlock]
+end function
+
+function changeDoWhile
+	replace*[statement]
+		'do
+			Stmts[statement]
+		'while '( DoWhileExp[expression] ');    
+	by
+		'do
+			Stmts[translateStatement][translateBlock]
+		'while '( DoWhileExp[changeExpression]'); 	
+end function
+
+function changeFor
+	replace*[statement]
+		'for '( InitExp[for_init] ForExp[for_expression]UpdateExp [for_update] ')
+        		Stmts[statement]    
+	by
+		'for '( InitExp[checkLocalVars][changeExpression] ForExp[changeExpression]UpdateExp [changeExpression] ')
+        		Stmts[translateStatement][translateBlock]  	
+end function
+
+function changeBreak
+	replace*[statement]
+		BreakStmt[break_statement]
+	deconstruct BreakStmt
+		'break LabelName[reference]';
+	by
+		BreakStmt[$ 'break 'goto]%'goto LabelName ';
+end function
+
+function changeContinue
+	replace*[statement]
+		ContinueStmt[continue_statement]
+	deconstruct ContinueStmt
+		'continue LabelName[reference]';
+	by
+		ContinueStmt[$ 'continue 'goto]%'goto LabelName ';
+end function
+
+function changeReturn
+	replace*[statement]
+		'return ReturnExp[opt expression] ';
+	by
+		'return ReturnExp[changeOptExpression] ';
+end function
+
+function changeThrow
+	replace*[statement]
+		'throw ThrowExp[expression] ';
+	by
+		'throw ThrowExp[changeExpression][changeCSException][changeCSStatement] ';
+end function
+
+function changeSynchronized
+	replace*[statement]
+    	    'synchronized '( SyncExp[expression] ')
+        	Stmts[statement]                 
+        by
+            'lock '( SyncExp[changeExpression] ')
+        	Stmts[translateStatement][translateBlock]                 
+end function
+
+function changeTry
+	replace*[statement]
+		'try TryBlock[block] Catches[repeat catch_clause] Finally[opt finally_clause]
+	construct NewCatches[repeat catch_clause]
+		_[changeCatch each Catches]
+	by
+		'try TryBlock[translateBlock] NewCatches Finally[changeFinally]
+end function
+
+function addCallsToSuper
+	replace*[repeat class_body_declaration]
+		Modifiers[repeat modifier] 
+		ConDeclar[constructor_declarator] 
+		ThrowsClause[opt throws] 
+		ConBody[constructor_body]
+		Remaining[repeat class_body_declaration]
+	%  does the constructor calls its base class?
+	where ConBody[containSuper][containThis]
+		% yes by a call to this or super
+		deconstruct ConBody
+		'{
+		       SuperCallStmt [declaration_or_statement]
+		       RemainingStmts[repeat declaration_or_statement]
+		'}
+		% all initialMethods calls
+		import InitCalls [repeat declaration_or_statement]
+		% join the methods calls within the constructor body
+		construct NewBlock[repeat declaration_or_statement]
+			InitCalls [. RemainingStmts]
+	by
+		% the constructor again in the new look
+		Modifiers ConDeclar ThrowsClause 
+		'{
+			% a call to base class must be the first stmt	      
+		       SuperCallStmt
+		       NewBlock
+		'}
+		Remaining[addCallsToSuper]
+end function
+
+function addCalls
+	replace*[repeat class_body_declaration]
+		Modifiers[repeat modifier] 
+		ConDeclar[constructor_declarator] 
+		ThrowsClause[opt throws] 
+		ConBody[constructor_body]
+		Remaining[repeat class_body_declaration]
+	%  does the constructor calls its base class?
+	where not ConBody[containSuper][containThis]
+		% No, there is no a call to this or super
+		deconstruct ConBody
+		'{
+			Stmts[repeat declaration_or_statement]
+		'}
+		% all initialMethods calls
+		import InitCalls [repeat declaration_or_statement]
+		% join the methods calls within the constructor body
+		construct NewBlock[repeat declaration_or_statement]
+			InitCalls [. Stmts]
+	by
+		% the constructor again in the new look
+		Modifiers ConDeclar ThrowsClause 
+		'{
+		       NewBlock
+		'}
+		Remaining[addCalls]
+end function
+
+function setDefaultConstructor
+	replace [repeat class_body_declaration]
+		ClassBodyDecl[repeat class_body_declaration] 
+	% get all constructors
+	construct Cons[repeat constructor_declaration]
+		_[^ ClassBodyDecl]
+	construct ConsCount[number]
+		_[length Cons]
+	where  ConsCount[< 1]% Not specified
+	import ClassName[class_name]	
+	construct NewConstructor[constructor_declaration]
+		ClassName() {}
+	by
+		NewConstructor
+		ClassBodyDecl
+end function
+
+function containInitBlock
+	match*[repeat class_body_declaration]
+		Block[block]
+		remaining[repeat class_body_declaration]
+end function
+
+rule toMethods 
+	replace[class_body_declaration]
+		Block[block]
+	% name begin with initialMethod
+	construct MethodID[id]
+		initialMethod
+	% find a number to add it to the name to be unique
+	construct MethodName[id]
+		MethodID[!]
+	construct MethodCall[declaration_or_statement]
+		MethodName();
+	import InitCalls [repeat declaration_or_statement]
+	% add the new method call to the brevious calls
+	export InitCalls 
+		InitCalls [. MethodCall]
+	% lastly the method itself
+	construct initialMethod[member_declaration]
+		'private 'void MethodName() Block
+	by
+		initialMethod
+end rule
+
+rule toStaticConstructor 
+	replace[class_body_declaration]
+		'static Block[block]
+	% constructor name is same as class name
+	import ClassName[class_name]	
+	construct NewStaticConstructor[constructor_declaration]
+	   'static ClassName() 
+	      Block				
+	by
+	   NewStaticConstructor
+end rule
+
+function changeField 
+	replace*[repeat class_body_declaration]
+		FieldDecl[field_declaration]
+		Remaining[repeat class_body_declaration]
+	by
+	   FieldDecl[changeFieldArrayDimensions][checkVar][checkPrimitiveConstants]
+	   	    [checkRunTimeConstants]% [changeArrayDimensions]
+	   Remaining[changeField]
+end function
+
+function changeIntMethodModifiers
+	construct JavaModifiers [repeat modifier]
+		'native  
+	construct CSModifiers [repeat modifier]
+		'extern 
+	replace * [ repeat modifier]
+		Modifiers [repeat modifier]
+	by
+		Modifiers [$ each JavaModifiers CSModifiers ]
+		  	[removeIntPublic]% C# default is public
+		  	%[changeAbstract][makeVirtual]not needed
+		  	%[changeProtected][removeNonCS]not needed
+end function
+
+function changeIntField 
+	replace*[repeat class_body_declaration]
+		FieldDecl[field_declaration]
+		Remaining[repeat class_body_declaration]
+	construct S[stringlit]
+		"//J2C# Unsupported:Interface field must be removed manually"
+	construct Comment[comment]
+		_[unquote S]	
+	by
+		Comment
+		FieldDecl
+		Remaining[changeIntField]
+end function
+
+function isPublic
+	match [modifier]
+		'public
+end function
+
+function isProtected
+	match [modifier]
+		'protected
+end function
+
+function changeExpression
+	replace*[expression]
+		Expression[expression]
+	by
+		Expression[$ '>>> '>>]
+end function
+
+function changeElseClause
+	replace[opt else_clause]
+		'else ElseStmts [statement]
+	by
+		'else ElseStmts[translateStatement][translateBlock]
+end function
+
+function addBreak
+	replace[repeat switch_alternative]
+	  	SwitchAlters [repeat switch_alternative]   
+	construct Length[number]
+		 _[length SwitchAlters]
+	construct Index[number]
+		Length[- 1]
+	construct LastAlter[repeat switch_alternative]
+		SwitchAlters [tail Length]
+	deconstruct LastAlter
+		Label[switch_label]  Stmts[repeat declaration_or_statement] 
+	%no break ?
+	where not Stmts[ContainBreak]
+	% all alternatives before the last one
+	construct BeforeLastAlter[repeat switch_alternative]
+		SwitchAlters [head Index]
+	%a new break to be added
+	construct Break[repeat declaration_or_statement]
+		break ;
+	construct NewStmts[repeat declaration_or_statement] 
+		Stmts[. Break]
+	%new statements with break
+	construct NewLastAlter[repeat switch_alternative]
+		Label NewStmts
+	construct NewSwitchAlters[repeat switch_alternative]
+		BeforeLastAlter[. NewLastAlter]
+	by
+		NewSwitchAlters  
+end function
+
+function fallThrough
+	replace*[repeat switch_alternative]
+	  	Label[switch_label]  Stmts[repeat declaration_or_statement] 
+		RemainingSwitchAlters [repeat switch_alternative]   
+	construct Length[number]
+		 _[length Stmts]
+	%no break and at least one statement is present
+	where not Stmts[ContainBreak]
+	where Length[ > 0]
+	where not Stmts[isGoto]
+	deconstruct RemainingSwitchAlters
+		NextLabel[switch_label]  NextStmts[repeat declaration_or_statement] 
+		RemainingAlters [repeat switch_alternative] 
+	%goto the next alternative
+	construct GotoStmt[repeat declaration_or_statement]
+		goto NextLabel 
+	%replace colon with semi colon to be a valid statement
+	construct NewGotoStmt[repeat declaration_or_statement]
+		GotoStmt[$ ': '; ]	
+	construct NewStmts[repeat declaration_or_statement] 
+		Stmts[. NewGotoStmt]
+	%new statements with goto
+	construct NewAlter[repeat switch_alternative]
+		Label NewStmts
+	%check the other cases also
+	construct NewRemainingAlters[repeat switch_alternative]
+		RemainingSwitchAlters[fallThrough]
+	%the final result
+	construct NewSwitchAlters[repeat switch_alternative]
+		NewAlter[. NewRemainingAlters]
+	by
+		  NewSwitchAlters
+end function
+
+function changeSwitchStmts
+replace*[repeat switch_alternative]
+	  	Label[switch_label]  Stmts[repeat declaration_or_statement] 
+		RemainingSwitchAlters [repeat switch_alternative]
+	by
+		Label  Stmts[translateStatementInBlock] 
+		RemainingSwitchAlters[changeSwitchStmts] 
+
+end function
+
+function changeOptExpression
+	replace[opt expression]
+		Expression[opt expression]
+	by
+		Expression[$ '>>> '>>]
+end function
+
+function changeCatch CatchClause[catch_clause]
+	replace[repeat catch_clause]
+		Catches[repeat catch_clause]
+	deconstruct CatchClause	
+		'catch '( DataType[type_specifier] Name[variable_name] ') 
+			CatchBlock[block] 
+	construct NewCatchClause[catch_clause]
+		'catch '( DataType[changeDataTypes][changeArrayTypes][changeExceptionName] Name ') 
+			CatchBlock[translateBlock]  
+	by
+		Catches[. NewCatchClause]
+end function
+
+function changeFinally
+	replace[opt finally_clause]
+		'finally FinBlock[block] 
+	by
+		'finally FinBlock[translateBlock]
+end function
+
+function checkPrimitiveConstants
+	replace[field_declaration]
+		Modifiers[repeat modifier] 
+		TypeSpecifier[type_specifier] 
+		VarDecl[variable_declarators];
+	construct AllVarDecl[repeat variable_declarator]
+		_[^ VarDecl]
+	deconstruct AllVarDecl
+		FirstVarDecl[variable_declarator]Remaining[repeat variable_declarator]
+	where Modifiers[containFinal]
+	where FirstVarDecl[isCompileTime]
+	by
+		Modifiers[removeStatic][finalToConst]
+			 [removeNonCSModifiers][changeProtected]
+		TypeSpecifier[changeDataTypes][changeArrayTypes]
+		VarDecl ;	
+end function
+
+function checkRunTimeConstants
+	replace[field_declaration]
+		Modifiers[repeat modifier] 
+		TypeSpecifier[type_specifier] 
+		VarDecl[variable_declarator];
+	where Modifiers[containFinal]
+	where not VarDecl[isCompileTime]
+	by
+		Modifiers[finalToReadOnly][removeNonCSModifiers][changeProtected]
+		TypeSpecifier[changeDataTypes][changeArrayTypes]
+		VarDecl ;	
+end function
+
+function checkVar
+	replace[field_declaration]
+		Modifiers[repeat modifier] 
+		TypeSpecifier[type_specifier] 
+		VarDecl[variable_declarators];
+	construct AllVarDecl[repeat variable_declarator]
+		_[^ VarDecl]
+	deconstruct AllVarDecl
+		FirstVarDecl[variable_declarator]Remaining[repeat variable_declarator]
+	where not Modifiers[containFinal]
+	by
+		Modifiers[removeNonCSModifiers][changeProtected]
+		TypeSpecifier[changeDataTypes][changeArrayTypes]
+		VarDecl ;	
+end function
+
+function changeFieldArrayDimensions 
+	replace[field_declaration]
+		Modifiers[repeat modifier] 
+		DataType[type_name]
+		VarName[declared_name]Dim [repeat dimension]VarInit [opt equals_variable_initializer];
+	% data type first and [] follows
+	construct NewTypeSpecifier[type_specifier]
+		DataType Dim
+	by
+		Modifiers NewTypeSpecifier VarName VarInit ;
+end function
+
+rule removeIntPublic
+	replace [repeat modifier]
+	   CurrentModifier[modifier]
+	   RemainingModifiers[repeat modifier]
+	where CurrentModifier[isPublic]
+	by
+	   RemainingModifiers
+end rule
+
+function ContainBreak
+	match[repeat declaration_or_statement]
+		Stmts[repeat declaration_or_statement]
+	construct Length[number]
+		 _[length Stmts]
+	construct LastDecStmt[repeat declaration_or_statement]
+		Stmts [tail Length]
+	deconstruct *LastDecStmt
+		breakStmt[break_statement]
+end function
+
+function isGoto
+match[repeat declaration_or_statement]
+		Stmts[repeat declaration_or_statement]
+	construct Length[number]
+		 _[length Stmts]
+	construct LastDecStmt[repeat declaration_or_statement]
+		Stmts [tail Length]
+	deconstruct *LastDecStmt
+		gotoStmt[goto_statement]
+end function
+
+function finalToReadOnly
+	replace *[repeat modifier]
+		CurrentModifier[modifier]
+		RemainingModifiers[repeat modifier]
+	where CurrentModifier[isFinal]
+	by 
+		'readonly
+		RemainingModifiers
+end function
+

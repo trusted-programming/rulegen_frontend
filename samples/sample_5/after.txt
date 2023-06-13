@@ -1,0 +1,51 @@
+#![allow (dead_code, mutable_transmutes, non_camel_case_types, non_snake_case, non_upper_case_globals, unused_assignments, unused_mut)]
+#![register_tool (c2rust)]
+#![feature (const_transmute, label_break_value, main, register_tool)]
+use rand :: prelude :: *;
+use rand_pcg :: Pcg64;
+use lazy_static :: lazy_static;
+use std :: sync :: Mutex;
+struct RustRand {
+    rng : Option < Pcg64 >,
+}
+impl RustRand {
+    fn srand (& mut self, seed : u64) {
+        self.rng = Some (Pcg64 :: seed_from_u64 (seed));
+    }
+    fn rand (& mut self) -> i32 {
+        if ! self.rng.is_some () {
+            self.rng = Some (Pcg64 :: seed_from_u64 (0));
+        }
+        let result : i32 = match self.rng.iter_mut ().next () {
+            Some (v) => v.gen (),
+            _ => 0
+        };
+        return result.abs ();
+    }
+}
+lazy_static! {static ref RUST_RAND: Mutex < RustRand > = Mutex :: new (RustRand {rng: None});
+} use rust :: *;
+extern "C" {
+    #[no_mangle]
+    fn __assert_fail (__assertion : * const libc :: c_char, __file : * const libc :: c_char, __line : libc :: c_uint, __function : * const libc :: c_char,) -> !;
+}
+pub const __ASSERT_FUNCTION : [libc :: c_char; 11] = unsafe {
+    * :: std :: mem :: transmute :: < & [u8; 11], & [libc :: c_char; 11] > (b"int main()\x00")
+};
+unsafe fn main_0 () -> libc :: c_int {
+    let mut a : libc :: c_int = 0;
+    if a == 42 as libc :: c_int {
+    } else {
+        __assert_fail (b"a == 42\x00" as * const u8 as * const libc :: c_char, b"/mnt/l00577375/trustworthy-programming-language-research-project/c2rust/scrust/scrust/demos/rosetta_code/assertions/main.c\x00" as * const u8 as * const libc :: c_char, 6 as
+          libc :: c_int as libc :: c_uint, __ASSERT_FUNCTION.as_ptr ());
+    }
+    return 0 as libc :: c_int;
+}
+
+#[main]
+pub fn main () {
+    unsafe {
+        :: std :: process :: exit (main_0 () as i32)
+    }
+}
+

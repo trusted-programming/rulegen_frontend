@@ -1,0 +1,219 @@
+include "rust.grm"
+
+% include "common.txl"
+
+
+
+% static mut utf8_replacement_char : [i8; 3] = [0xef as i8, 0xbf as i8, 0xbd as i8,];
+% to
+% static mut utf8_replacement_char : [i8; 3] = [0xef, 0xbf, 0xbd];
+
+
+% common.txl starts here
+#if not TXL_RULES_COMMON then
+#define TXL_RULES_COMMON
+
+% remove all `as` cast of given type from scope
+
+% prepend an Item in program, e.g.: adding "use std :: env ;"
+
+
+
+% whether function is declared in an external block
+
+
+
+
+
+
+
+% rm function declarations in extern block that are not called.
+
+
+
+
+% remove given Item if given N is one
+
+% add Id to UniqIds if it is in Ids and not in UniqIds
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% this is to avoid removing casts from integer to raw pointers, e.g. in 100_prisoners:
+%   pub static mut drawerSet : * mut drawer = 0 as * const drawer as * mut drawer;
+
+% this is to avoid removing casts from BYTE_STRING_LITERAL to raw pointers, e.g. in array_length:
+%   let mut fruit : [* const i8; 2] = [b"apples\x00" as *const i8, b"oranges\x00" as *const i8];
+
+
+#end if
+
+% common.txl ends here
+
+
+
+
+
+function main
+    replace [program]
+        P   [program]
+    by
+        P   
+            [rmIntLitCasts]
+end function
+
+
+
+function _isLibcCShort
+    match [TypeNoBounds]
+        libc::c_short
+end function
+
+
+
+function _isLibcCInt
+    match [TypeNoBounds]
+        libc::c_int
+end function
+
+
+
+function _isLibcCLong
+    match [TypeNoBounds]
+        libc::c_long
+end function
+
+
+
+function _isLibcCLongLong
+    match [TypeNoBounds]
+        libc::c_longlong
+end function
+
+
+
+function _isLibcCUShort
+    match [TypeNoBounds]
+        libc::c_ushort
+end function
+
+
+
+function _isLibcCUInt
+    match [TypeNoBounds]
+        libc::c_uint
+end function
+
+
+
+function _isLibcCULong
+    match [TypeNoBounds]
+        libc::c_ulong
+end function
+
+
+
+function _isLibcCULongLong
+    match [TypeNoBounds]
+        libc::c_ulonglong
+end function
+
+
+
+function _isU8
+    match [TypeNoBounds]
+        u8
+end function
+
+
+
+function _isU16
+    match [TypeNoBounds]
+        u16
+end function
+
+
+
+function _isU32
+    match [TypeNoBounds]
+        u32
+end function
+
+
+
+function _isU64
+    match [TypeNoBounds]
+        u64
+end function
+
+
+
+function _isI8
+    match [TypeNoBounds]
+        i8
+end function
+
+
+
+function _isI16
+    match [TypeNoBounds]
+        i16
+end function
+
+
+
+function _isI32
+    match [TypeNoBounds]
+        i32
+end function
+
+
+
+function _isI64
+    match [TypeNoBounds]
+        i64
+end function
+
+
+
+rule rmIntLitCasts
+    replace $ [Item]
+        'static Mut ['mut ?] IDENTIFIER [IDENTIFIER] ': ArrayType [ArrayType] '= Expression [Expression] ';
+    deconstruct ArrayType
+        '[ Type [TypeNoBounds] '; _ [Expression] ']
+    where
+        Type [_isLibcCShort] [_isLibcCInt] [_isLibcCLong] [_isLibcCLongLong]
+            [_isLibcCUShort] [_isLibcCUInt] [_isLibcCULong] [_isLibcCULongLong]
+            [_isU8] [_isU16] [_isU32] [_isU64]
+            [_isI8] [_isI16] [_isI32] [_isI64]
+    by
+        'static Mut IDENTIFIER ': ArrayType '= Expression [_rmIntLitCast] ';
+end rule
+

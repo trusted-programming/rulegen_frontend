@@ -1,0 +1,14 @@
+include "rust.grm"
+
+redefine VisItem
+        [PubConstI32Zero] [NL]
+    |   [Visibility?] [VisibleItem] [NL]
+end redefine
+
+define PubConstI32Zero
+    'pub 'const [PubConstI32ZeroId] ': i32 '= 0 ';
+end define
+
+define PubConstI32ZeroId
+    [IDENTIFIER]
+end define

@@ -1,0 +1,2 @@
+Console.WriteLine ("i is 10 or more");
+ 

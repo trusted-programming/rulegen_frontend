@@ -1,0 +1,2 @@
+System.out.println ("i is 10 or more");
+ 
