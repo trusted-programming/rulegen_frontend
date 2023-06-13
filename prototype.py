@@ -146,16 +146,14 @@ if st.button('Predict'):
     if response.status_code == 200:
         missing_rule = response.json()['missing_rule']
         st.write('## The predicted missing rule is as below: ')
-        st.code(missing_rule, language='python')  # Display missing_rule as a code block
-
-        # Create two columns for the buttons
-        
-        st.download_button('Download the predicted missing rule', missing_rule)
-            
-     
-        st.session_state['missing_rule'] = missing_rule
+        st.session_state['missing_rule'] = missing_rule  # Store the missing rule in the session state
     else:
         st.error('Failed to predict. Please check your inputs and try again.')
+
+# Display the predicted missing rule, if it exists in the session state
+if 'missing_rule' in st.session_state:
+    st.code(st.session_state['missing_rule'], language='python')  # Display missing_rule as a code block
+    st.download_button('Download the predicted missing rule', st.session_state['missing_rule'])
 
 if st.session_state['predict_clicked']:
     # Execute Rule button
