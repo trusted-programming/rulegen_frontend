@@ -7,6 +7,8 @@ import pandas as pd
 
 from utils import parse_txt
 
+
+API = "http://localhost:5001"
 st.set_page_config(page_title="Txl Rule Generation", layout="wide")
 
 # Custom Styling
@@ -139,7 +141,7 @@ if st.button('Predict'):
         'context': context_input_text
     }
     # POST request to Flask API
-    url = 'http://localhost:5000/predict'  # Replace with your Flask API URL
+    url = f'{API}/predict'  # Replace with your Flask API URL
     with st.spinner('Predicting...'):
         response = requests.post(url, json=data_inf)
 
@@ -159,7 +161,7 @@ if st.session_state['predict_clicked']:
     # Execute Rule button
     if st.button('Execute Rule'):
         # POST request to Flask API to execute the rule
-        url_execute = 'http://localhost:5000/execute'  # Replace with your Flask API URL for executing the rule
+        url_execute = f'{API}/execute'  # Replace with your Flask API URL for executing the rule
 
         combined_rule = context_input_text + '\n' + st.session_state['missing_rule']
 
