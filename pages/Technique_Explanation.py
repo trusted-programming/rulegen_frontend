@@ -1,8 +1,11 @@
 import streamlit as st
 from PIL import Image
+import os
 
 st.markdown("# Technique Explanation ❄️")
 st.sidebar.markdown("# Technique Explanation ❄️")
+
+base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 st.write("This demo leverages machine learning models to automatically \
     generate the missing TXL rule, denoted as c. The goal is to ensure \
@@ -38,11 +41,11 @@ st.write("Due to the scarcity of TXL rule transformations, \
 
 outer_cols = st.columns([1, 1])
 with outer_cols[0]:
-    image = Image.open('/Users/lichunmiao/SynologyDrive/rulegen_frontend/images/txl_big.jpg')
-    st.image(image, caption='Original TXL rules.')
+    image_path = os.path.join(base_path, "images/txl_big.jpg")
+    st.image(image_path, caption='Original TXL rules.')
 with outer_cols[1]:
-    image = Image.open('/Users/lichunmiao/SynologyDrive/rulegen_frontend/images/txl_alg1_1.jpg')
-    st.image(image, caption='TXL rules produced by the data extraction method.')
+    image_path = os.path.join(base_path, "images/txl_alg1_1.jpg")
+    st.image(image_path, caption='TXL rules produced by the data extraction method.')
     
 st.markdown("We extracted all possible TXL transformations from the original TXL rules.\
  First, we analyzed the rule call graph of the original TXL rules (refer to the left image above).\
