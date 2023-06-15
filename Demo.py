@@ -179,5 +179,5 @@ if st.session_state['predict_clicked']:
         else:
             st.error('Failed to execute the rule.')
 
-if 'execution_result' in st.session_state:
-    st.text_area('Execution Result:', value=st.session_state['execution_result'], height=200, key='execution_result')
+# if 'execution_result' in st.session_state:
+#     st.text_area('Execution Result:', value=st.session_state['execution_result'], height=200, key='execution_result')
