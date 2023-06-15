@@ -175,7 +175,7 @@ if st.session_state['predict_clicked']:
         if response_execute.status_code == 200:
             execution_result = response_execute.json()['transformed_program']
             st.session_state['execution_result'] = execution_result
-            st.text_area('Execution Result:', value=st.session_state['execution_result'], height=200, key='execution_result')
+            st.text_area('Execution Result:', height=200, key='execution_result')
         else:
             st.error('Failed to execute the rule.')
 
