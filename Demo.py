@@ -175,12 +175,12 @@ if st.session_state['predict_clicked']:
       
         if response_execute.status_code == 200:
             execution_result = response_execute.json()['transformed_program']
-            st.session_state['execution_result'] = execution_result
+            # st.session_state['execution_result'] = execution_result
 
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("## Execution Result")
-                st.text_area('', value=st.session_state['execution_result'], height=400, key='execution_result')
+                st.text_area('', value=execution_result, height=400, key='execution_result')
             
             with col2:
                 st.markdown("## Original")
