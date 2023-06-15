@@ -157,6 +157,7 @@ if 'missing_rule' in st.session_state:
     st.code(st.session_state['missing_rule'], language='python')  # Display missing_rule as a code block
     st.download_button('Download the predicted missing rule', st.session_state['missing_rule'])
 
+# col4, col5 = st.columns(2)
 if st.session_state['predict_clicked']:
     # Execute Rule button
     if st.button('Execute Rule'):
@@ -175,7 +176,17 @@ if st.session_state['predict_clicked']:
         if response_execute.status_code == 200:
             execution_result = response_execute.json()['transformed_program']
             st.session_state['execution_result'] = execution_result
-            st.text_area('Execution Result:', height=200, key='execution_result')
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("## Execution Result")
+                st.text_area('', value=st.session_state['execution_result'], height=400, key='execution_result')
+            
+            with col2:
+                st.markdown("## Original")
+                st.text_area('', value=after_input_text, height=400, key='after_display')
+
+            # st.text_area('Execution Result:', height=200, key='execution_result')
         else:
             st.error('Failed to execute the rule.')
 
